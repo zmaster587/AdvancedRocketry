@@ -1,14 +1,17 @@
 package zmaster587.advancedRocketry.util;
 
 import net.minecraft.block.Block;
+import net.minecraft.init.Blocks;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
 import org.w3c.dom.Document;
 import org.w3c.dom.NamedNodeMap;
 import org.w3c.dom.Node;
+import org.w3c.dom.NodeList;
 import org.xml.sax.SAXException;
 import zmaster587.advancedRocketry.AdvancedRocketry;
 
+import javax.annotation.Nonnull;
 import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
 import javax.xml.parsers.ParserConfigurationException;
@@ -19,7 +22,7 @@ import java.util.List;
 
 public class XMLAsteroidLoader {
 
-	Document doc;
+	private Document doc;
 
 	public boolean loadFile(File xmlFile) throws IOException {
 		DocumentBuilder docBuilder;
@@ -44,13 +47,22 @@ public class XMLAsteroidLoader {
 	}
 
 	/**
-	 * Load the propery file looking for combinations of temp and pressure
-	 * @param propertyFile
+	 * Load the property file looking for combinations of temp and pressure
 	 * @return  list of singleEntry (order MUST be preserved)
 	 */
-	public List<AsteroidSmall> loadPropertyFile() {
-		Node childNode = doc.getFirstChild().getFirstChild();
-		List<AsteroidSmall> mapping = new LinkedList<AsteroidSmall>();
+	public List<Asteroid> loadPropertyFile() {
+		Node childNode = doc.getFirstChild();
+
+		while(childNode != null) {
+			if(!childNode.getNodeName().equalsIgnoreCase("asteroids")) {
+				childNode = childNode.getFirstChild();
+				break;
+			}
+
+			childNode = childNode.getNextSibling();
+		}
+
+		List<Asteroid> mapping = new LinkedList<>();
 
 		while(childNode != null) {
 
@@ -59,7 +71,7 @@ public class XMLAsteroidLoader {
 				continue;
 			}
 
-			AsteroidSmall asteroid = new AsteroidSmall();
+			Asteroid asteroid = new Asteroid();
 
 			if(childNode.hasAttributes()) {
 				NamedNodeMap att = childNode.getAttributes();
@@ -143,6 +155,18 @@ public class XMLAsteroidLoader {
 				}
 				else
 					asteroid.timeMultiplier = 1f;
+
+				node = att.getNamedItem("baseStack");
+				if(node != null) {
+					ItemStack stack = getStack(node.getTextContent());
+					if(!stack.isEmpty())
+						asteroid.baseStack = (stack);
+					else {
+						AdvancedRocketry.logger.warn("Asteroid " + asteroid.ID + " has invalid baseStack: " + node.getTextContent());
+					}
+				}
+				else
+					asteroid.baseStack = new ItemStack(Blocks.COBBLESTONE);
 			}
 			Node asteroidNode = childNode.getFirstChild();
 
@@ -161,7 +185,7 @@ public class XMLAsteroidLoader {
 					if(nodeStack != null && nodeChance != null)
 					{
 						ItemStack stack = getStack(nodeStack.getTextContent());
-						if(stack != null)
+						if(!stack.isEmpty())
 							asteroid.itemStacks.add(stack);
 						else {
 							AdvancedRocketry.logger.warn("Asteroid " + asteroid.ID + " has invalid ore: " + nodeStack.getTextContent());
@@ -171,7 +195,7 @@ public class XMLAsteroidLoader {
 						}
 						
 						try {
-							asteroid.stackProbabilites.add(Float.parseFloat(nodeChance.getTextContent()));
+							asteroid.stackProbabilities.add(Float.parseFloat(nodeChance.getTextContent()));
 						} catch (NumberFormatException e) {
 							AdvancedRocketry.logger.warn("Asteroid " + asteroid.ID + " has invalid stack probability: " + nodeChance.getTextContent());
 							//Make sure the list size syncs
@@ -181,7 +205,7 @@ public class XMLAsteroidLoader {
 						}
 					}
 					else
-						AdvancedRocketry.logger.warn("Expected 'itemStack' and 'chance' tags, at least one is missing in  " + asteroid.ID );
+						AdvancedRocketry.logger.warn("Asteroid " + asteroid.ID + " expected 'itemStack' and 'chance' tags, at least one is missing");
 				}
 
 				asteroidNode = asteroidNode.getNextSibling();
@@ -195,6 +219,7 @@ public class XMLAsteroidLoader {
 		return mapping;
 	}
 
+	@Nonnull
 	public static ItemStack getStack(String text) {
 		//Backwards compat, " " used to be the delimiter
 		String[] splitStr = text.contains(";") ? text.split(";") : text.split(" ");
@@ -205,10 +230,12 @@ public class XMLAsteroidLoader {
 		if(splitStr.length > 1) {
 			try {
 				meta = Integer.parseInt(splitStr[1].trim());
-			} catch( NumberFormatException e) {}
+			} catch( NumberFormatException e) {
+				AdvancedRocketry.logger.warn("Unable to parse int in asteroid config: \"" + splitStr[1] + "\"");
+			}
 		}
 
-		ItemStack stack = null;
+		ItemStack stack = ItemStack.EMPTY;
 		Block block = Block.getBlockFromName(splitStr[0].trim());
 		if(block == null) {
 			Item item = Item.getByNameOrId(splitStr[0].trim());
